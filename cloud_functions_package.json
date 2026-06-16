@@ -1,0 +1,13 @@
+{
+  "name": "agri-fusion-functions",
+  "description": "Firebase Cloud Functions for rover + satellite data fusion",
+  "scripts": {
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "engines": { "node": "20" },
+  "dependencies": {
+    "firebase-admin": "^12.0.0",
+    "firebase-functions": "^4.0.0"
+  }
+}

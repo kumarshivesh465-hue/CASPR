@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AgriSense Dashboard</title>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+
+  <style>
+    :root {
+      --bg:       #0d1117;
+      --surface:  #161b22;
+      --surface2: #21262d;
+      --border:   #30363d;
+      --green:    #3fb950;
+      --yellow:   #d29922;
+      --red:      #f85149;
+      --blue:     #58a6ff;
+      --text:     #e6edf3;
+      --muted:    #8b949e;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── NAV ── */
+    nav {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .nav-brand { font-size: 18px; font-weight: 700; color: var(--green); display: flex; align-items: center; gap: 8px; }
+    .nav-links  { display: flex; gap: 24px; }
+    .nav-links a { color: var(--muted); text-decoration: none; font-size: 14px; cursor: pointer; }
+    .nav-links a:hover, .nav-links a.active { color: var(--text); }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; margin-right: 6px; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    /* ── LAYOUT ── */
+    .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+    .grid-2    { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid-3    { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .grid-4    { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    @media (max-width: 900px) { .grid-2,.grid-3,.grid-4 { grid-template-columns: 1fr; } }
+
+    /* ── CARDS ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .card-title { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+
+    /* ── METRIC ── */
+    .metric-big   { font-size: 36px; font-weight: 700; line-height: 1; }
+    .metric-unit  { font-size: 14px; color: var(--muted); margin-left: 4px; }
+    .metric-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .metric-status { font-size: 12px; margin-top: 6px; }
+    .good  { color: var(--green);  }
+    .warn  { color: var(--yellow); }
+    .bad   { color: var(--red);    }
+    .info  { color: var(--blue);   }
+
+    /* ── GAUGE BAR ── */
+    .gauge-row   { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+    .gauge-label { width: 90px; font-size: 13px; color: var(--muted); flex-shrink: 0; }
+    .gauge-bar   { flex: 1; height: 8px; background: var(--surface2); border-radius: 4px; overflow: hidden; }
+    .gauge-fill  { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+    .gauge-value { width: 54px; text-align: right; font-size: 13px; font-weight: 600; }
+
+    /* ── ALERTS ── */
+    .alert {
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin: 8px 0;
+      font-size: 13px;
+      border-left: 4px solid;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .alert.critical { background: rgba(248,81,73,0.12);  border-color: var(--red);    }
+    .alert.warning  { background: rgba(210,153,34,0.12); border-color: var(--yellow); }
+    .alert.info     { background: rgba(88,166,255,0.10); border-color: var(--blue);   }
+    .alert-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+    .alert-cat  { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+
+    /* ── INDEX GRID ── */
+    .index-pill {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      text-align: center;
+    }
+    .index-name  { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    .index-value { font-size: 22px; font-weight: 700; }
+    .index-bar   { height: 4px; border-radius: 2px; margin-top: 8px; background: var(--surface); overflow: hidden; }
+    .index-fill  { height: 100%; border-radius: 2px; }
+
+    /* ── TABLE ── */
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th    { color: var(--muted); font-weight: 500; text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+    td    { padding: 8px 10px; border-bottom: 1px solid var(--surface2); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--surface2); }
+
+    /* ── CONFIG PANEL ── */
+    .config-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .config-panel h2 { font-size: 16px; margin-bottom: 16px; }
+    .input-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+    .input-group { display: flex; flex-direction: column; gap: 6px; min-width: 220px; }
+    label { font-size: 12px; color: var(--muted); }
+    input {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+      width: 100%;
+    }
+    input:focus { border-color: var(--blue); }
+    button {
+      background: var(--green);
+      color: #000;
+      border: none;
+      border-radius: 8px;
+      padding: 9px 22px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    button:hover { opacity: 0.85; }
+
+    /* ── SECTION HEADER ── */
+    .section-header { display: flex; justify-content: space-between; align-items: center; margin: 24px 0 12px; }
+    .section-header h2 { font-size: 16px; font-weight: 600; }
+    .timestamp { font-size: 12px; color: var(--muted); }
+
+    /* ── SPINNER ── */
+    .spinner { text-align: center; padding: 40px; color: var(--muted); }
+
+    /* ── EMPTY ── */
+    .empty { text-align: center; padding: 32px; color: var(--muted); font-size: 14px; }
+    .empty .emoji { font-size: 32px; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-brand">🌿 AgriSense</div>
+  <div class="nav-links">
+    <a id="tab-dashboard" class="active" onclick="showTab('dashboard')">Dashboard</a>
+    <a id="tab-history"   onclick="showTab('history')">History</a>
+    <a id="tab-config"    onclick="showTab('config')">Settings</a>
+  </div>
+  <div style="font-size:13px; color:var(--muted)">
+    <span class="status-dot" id="status-dot"></span>
+    <span id="status-text">Connecting…</span>
+  </div>
+</nav>
+
+<!-- ── DASHBOARD TAB ── -->
+<div id="tab-dashboard-content" class="container">
+
+  <!-- Config banner (shown when not configured) -->
+  <div id="config-banner" class="config-panel" style="display:none">
+    <h2>⚙️ Connect to Firebase</h2>
+    <div class="input-row">
+      <div class="input-group">
+        <label>Firebase Database URL</label>
+        <input id="db-url-input" placeholder="https://your-project-default-rtdb.firebaseio.com" />
+      </div>
+      <div class="input-group">
+        <label>Field ID</label>
+        <input id="field-id-input" value="field_01" />
+      </div>
+      <button onclick="saveConfig()">Connect</button>
+    </div>
+  </div>
+
+  <!-- Last updated -->
+  <div class="section-header">
+    <h2>📍 Field Overview</h2>
+    <div class="timestamp" id="last-updated">—</div>
+  </div>
+
+  <!-- Top metrics row -->
+  <div class="grid-4" id="top-metrics">
+    <div class="card" id="card-moisture"></div>
+    <div class="card" id="card-temp"></div>
+    <div class="card" id="card-ph"></div>
+    <div class="card" id="card-ndvi"></div>
+  </div>
+
+  <!-- Middle row: NPK + satellite indices -->
+  <div class="grid-2" style="margin-top:16px">
+    <div class="card" id="card-npk">
+      <div class="card-title">🧪 Soil NPK</div>
+      <div class="spinner">Loading…</div>
+    </div>
+    <div class="card" id="card-indices">
+      <div class="card-title">🛰️ Satellite Indices</div>
+      <div class="spinner">Loading…</div>
+    </div>
+  </div>
+
+  <!-- Recommendations -->
+  <div class="section-header" style="margin-top:20px">
+    <h2>💡 Recommendations</h2>
+  </div>
+  <div id="recommendations"><div class="spinner">Loading…</div></div>
+
+</div>
+
+<!-- ── HISTORY TAB ── -->
+<div id="tab-history-content" class="container" style="display:none">
+  <div class="section-header">
+    <h2>📊 Sensor History</h2>
+  </div>
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>N (mg/kg)</th>
+          <th>P (mg/kg)</th>
+          <th>K (mg/kg)</th>
+          <th>pH</th>
+          <th>Moisture %</th>
+          <th>Air Temp °C</th>
+          <th>Humidity %</th>
+        </tr>
+      </thead>
+      <tbody id="history-tbody">
+        <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px">No data yet</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── CONFIG TAB ── -->
+<div id="tab-config-content" class="container" style="display:none">
+  <div class="config-panel">
+    <h2>⚙️ Settings</h2>
+    <div class="input-row">
+      <div class="input-group">
+        <label>Firebase Database URL</label>
+        <input id="db-url-setting" placeholder="https://your-project-default-rtdb.firebaseio.com" />
+      </div>
+      <div class="input-group">
+        <label>Field ID</label>
+        <input id="field-id-setting" value="field_01" />
+      </div>
+      <button onclick="saveConfig()">Save & Reconnect</button>
+    </div>
+    <p style="color:var(--muted);font-size:13px;margin-top:16px">
+      Find your Database URL in Firebase Console → Realtime Database.<br>
+      The Field ID must match the one set in your Streamlit app and ESP32 firmware.
+    </p>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────────────────────────
+let db       = null;
+let fieldId  = "field_01";
+let listeners = [];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONFIG
+// ─────────────────────────────────────────────────────────────────────────────
+function loadConfig() {
+  const url = localStorage.getItem("firebase_url") || "";
+  fieldId   = localStorage.getItem("field_id")    || "field_01";
+  document.getElementById("db-url-input").value     = url;
+  document.getElementById("db-url-setting").value   = url;
+  document.getElementById("field-id-input").value   = fieldId;
+  document.getElementById("field-id-setting").value = fieldId;
+  if (url) {
+    initFirebase(url);
+  } else {
+    document.getElementById("config-banner").style.display = "block";
+    setStatus("Not configured", false);
+  }
+}
+
+function saveConfig() {
+  const url = (document.getElementById("db-url-input").value ||
+               document.getElementById("db-url-setting").value).trim();
+  fieldId   = (document.getElementById("field-id-input").value ||
+               document.getElementById("field-id-setting").value).trim() || "field_01";
+  localStorage.setItem("firebase_url", url);
+  localStorage.setItem("field_id",     fieldId);
+  document.getElementById("config-banner").style.display = "none";
+  initFirebase(url);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FIREBASE
+// ─────────────────────────────────────────────────────────────────────────────
+function initFirebase(url) {
+  // Detach old listeners
+  listeners.forEach(ref => ref.off());
+  listeners = [];
+
+  try {
+    if (firebase.apps.length) firebase.app().delete().then(() => _init(url));
+    else _init(url);
+  } catch(e) { _init(url); }
+}
+
+function _init(url) {
+  try {
+    const app = firebase.initializeApp({ databaseURL: url });
+    db = firebase.database(app);
+    setStatus("Connected", true);
+    attachListeners();
+  } catch(e) {
+    setStatus("Connection failed", false);
+    console.error(e);
+  }
+}
+
+function attachListeners() {
+  // Rover latest
+  const roverRef = db.ref(`rover/${fieldId}/latest`);
+  roverRef.on("value", snap => { updateRoverUI(snap.val()); });
+  listeners.push(roverRef);
+
+  // Satellite latest
+  const satRef = db.ref(`satellite/${fieldId}/latest`);
+  satRef.on("value", snap => { updateSatelliteUI(snap.val()); });
+  listeners.push(satRef);
+
+  // Recommendations
+  const recRef = db.ref(`recommendations/${fieldId}/latest`);
+  recRef.on("value", snap => { updateRecommendationsUI(snap.val()); });
+  listeners.push(recRef);
+
+  // History
+  const histRef = db.ref(`rover/${fieldId}/readings`).orderByKey().limitToLast(50);
+  histRef.on("value", snap => { updateHistoryUI(snap.val()); });
+  listeners.push(histRef);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI UPDATERS
+// ─────────────────────────────────────────────────────────────────────────────
+function setStatus(msg, ok) {
+  document.getElementById("status-text").textContent = msg;
+  document.getElementById("status-dot").style.background = ok ? "var(--green)" : "var(--red)";
+}
+
+function updateRoverUI(data) {
+  if (!data) {
+    ["moisture","temp","ph"].forEach(id =>
+      document.getElementById(`card-${id}`).innerHTML = emptyCard(id));
+    return;
+  }
+
+  const ts = data.timestamp ? new Date(data.timestamp).toLocaleString() : "—";
+  document.getElementById("last-updated").textContent = "Last update: " + ts;
+
+  // Moisture
+  const moist = parseFloat(data.soil_moisture);
+  const moistStatus = moist < 25 ? "bad" : moist > 75 ? "warn" : "good";
+  document.getElementById("card-moisture").innerHTML = `
+    <div class="card-title">💧 Soil Moisture</div>
+    <div class="metric-big ${moistStatus}">${isNaN(moist) ? "—" : moist.toFixed(1)}<span class="metric-unit">%</span></div>
+    <div class="metric-label">Capacitive sensor</div>
+    <div class="gauge-bar" style="margin-top:12px"><div class="gauge-fill" style="width:${Math.min(moist||0,100)}%;background:${moist<25?'var(--red)':moist>75?'var(--yellow)':'var(--green)'}"></div></div>
+  `;
+
+  // Temp
+  const temp = parseFloat(data.air_temp);
+  const hum  = parseFloat(data.humidity);
+  const tempStatus = temp > 42 ? "bad" : temp > 38 ? "warn" : "good";
+  document.getElementById("card-temp").innerHTML = `
+    <div class="card-title">🌡️ Air Temperature</div>
+    <div class="metric-big ${tempStatus}">${isNaN(temp) ? "—" : temp.toFixed(1)}<span class="metric-unit">°C</span></div>
+    <div class="metric-label">Humidity: ${isNaN(hum) ? "—" : hum.toFixed(0) + "%"}</div>
+  `;
+
+  // pH
+  const ph = parseFloat(data.ph);
+  const phStatus = ph < 5.5 ? "bad" : ph > 8.0 ? "warn" : "good";
+  const phLabel = ph < 5.5 ? "Too acidic" : ph > 8.0 ? "Too alkaline" : "Optimal range";
+  document.getElementById("card-ph").innerHTML = `
+    <div class="card-title">⚗️ Soil pH</div>
+    <div class="metric-big ${phStatus}">${isNaN(ph) ? "—" : ph.toFixed(1)}</div>
+    <div class="metric-label">${phLabel} (ideal: 6.0–7.5)</div>
+    <div class="gauge-bar" style="margin-top:12px"><div class="gauge-fill" style="width:${isNaN(ph)?0:((ph-4)/10)*100}%;background:${ph<5.5?'var(--red)':ph>8?'var(--yellow)':'var(--green)'}"></div></div>
+  `;
+
+  // NPK card
+  const n = parseFloat(data.npk_n), p = parseFloat(data.npk_p), k = parseFloat(data.npk_k);
+  document.getElementById("card-npk").innerHTML = `
+    <div class="card-title">🧪 Soil NPK</div>
+    ${gaugeRow("Nitrogen",   n, 300, isNaN(n) ? "—" : n.toFixed(0) + " mg/kg", n < 50 ? "var(--red)" : n < 100 ? "var(--yellow)" : "var(--green)")}
+    ${gaugeRow("Phosphorus", p, 100, isNaN(p) ? "—" : p.toFixed(0) + " mg/kg", p < 25 ? "var(--red)" : "var(--green)")}
+    ${gaugeRow("Potassium",  k, 400, isNaN(k) ? "—" : k.toFixed(0) + " mg/kg", k < 110 ? "var(--red)" : "var(--green)")}
+  `;
+}
+
+function gaugeRow(label, value, max, displayVal, color) {
+  const pct = isNaN(value) ? 0 : Math.min((value / max) * 100, 100);
+  return `
+    <div class="gauge-row">
+      <div class="gauge-label">${label}</div>
+      <div class="gauge-bar"><div class="gauge-fill" style="width:${pct}%;background:${color}"></div></div>
+      <div class="gauge-value" style="color:${color}">${displayVal}</div>
+    </div>
+  `;
+}
+
+function updateSatelliteUI(data) {
+  if (!data || !data.indices) {
+    document.getElementById("card-ndvi").innerHTML = emptyCard("ndvi");
+    document.getElementById("card-indices").innerHTML = `<div class="card-title">🛰️ Satellite Indices</div><div class="empty"><div class="emoji">🛰️</div>Run the Streamlit app to get satellite data</div>`;
+    return;
+  }
+
+  const idx = data.indices;
+  const ndvi = parseFloat(idx.NDVI?.mean);
+  const ndviStatus = ndvi < 0.2 ? "bad" : ndvi < 0.35 ? "warn" : "good";
+  const ndviLabel  = ndvi < 0.2 ? "Stressed/bare" : ndvi < 0.35 ? "Below average" : "Healthy";
+
+  document.getElementById("card-ndvi").innerHTML = `
+    <div class="card-title">🌿 NDVI</div>
+    <div class="metric-big ${ndviStatus}">${isNaN(ndvi) ? "—" : ndvi.toFixed(3)}</div>
+    <div class="metric-label">${ndviLabel}</div>
+    <div class="metric-status" style="margin-top:8px;font-size:12px;color:var(--muted)">
+      Sentinel-2 · ${data.meta?.date || ""}
+    </div>
+  `;
+
+  const indexOrder = ["NDVI","EVI","SAVI","NDWI","NDRE","NDMI","GNDVI","CHL"];
+  const pills = indexOrder
+    .filter(n => idx[n])
+    .map(name => {
+      const val = parseFloat(idx[name]?.mean);
+      const color = val < 0.1 ? "var(--red)" : val < 0.3 ? "var(--yellow)" : "var(--green)";
+      const pct   = Math.max(0, Math.min(((val + 1) / 2) * 100, 100));
+      return `
+        <div class="index-pill">
+          <div class="index-name">${name}</div>
+          <div class="index-value" style="color:${color}">${isNaN(val) ? "—" : val.toFixed(3)}</div>
+          <div class="index-bar"><div class="index-fill" style="width:${pct}%;background:${color}"></div></div>
+        </div>
+      `;
+    }).join("");
+
+  const cols = Math.min(4, indexOrder.filter(n => idx[n]).length);
+  document.getElementById("card-indices").innerHTML = `
+    <div class="card-title">🛰️ Satellite Indices · ${data.meta?.date || ""}</div>
+    <div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:8px;margin-top:4px">
+      ${pills}
+    </div>
+  `;
+}
+
+function updateRecommendationsUI(data) {
+  const el = document.getElementById("recommendations");
+  if (!data || !data.items || data.items.length === 0) {
+    el.innerHTML = `<div class="empty"><div class="emoji">💡</div>Recommendations will appear once rover + satellite data is available</div>`;
+    return;
+  }
+  const icons = { critical: "🚨", warning: "⚠️", info: "✅" };
+  el.innerHTML = data.items.map(rec => `
+    <div class="alert ${rec.severity || 'info'}">
+      <div class="alert-icon">${icons[rec.severity] || "ℹ️"}</div>
+      <div>
+        <div class="alert-cat">${rec.category || ""}</div>
+        <div>${rec.message}</div>
+      </div>
+    </div>
+  `).join("");
+}
+
+function updateHistoryUI(data) {
+  const tbody = document.getElementById("history-tbody");
+  if (!data) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px">No history yet</td></tr>`;
+    return;
+  }
+  const rows = Object.values(data)
+    .sort((a, b) => (b.timestamp || "").localeCompare(a.timestamp || ""))
+    .slice(0, 50);
+
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td>${r.timestamp ? new Date(r.timestamp).toLocaleString() : "—"}</td>
+      <td>${fmtNum(r.npk_n)}</td>
+      <td>${fmtNum(r.npk_p)}</td>
+      <td>${fmtNum(r.npk_k)}</td>
+      <td>${fmtNum(r.ph, 1)}</td>
+      <td>${fmtNum(r.soil_moisture, 1)}</td>
+      <td>${fmtNum(r.air_temp, 1)}</td>
+      <td>${fmtNum(r.humidity, 1)}</td>
+    </tr>
+  `).join("");
+}
+
+function fmtNum(v, dec=0) {
+  const n = parseFloat(v);
+  return isNaN(n) ? "—" : n.toFixed(dec);
+}
+
+function emptyCard(id) {
+  return `<div class="card-title">${id}</div><div class="empty">—</div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB SWITCHING
+// ─────────────────────────────────────────────────────────────────────────────
+function showTab(name) {
+  ["dashboard","history","config"].forEach(t => {
+    document.getElementById(`tab-${t}-content`).style.display  = t === name ? "block" : "none";
+    document.getElementById(`tab-${t}`).classList.toggle("active", t === name);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────────────────────────────────────
+window.addEventListener("load", loadConfig);
+</script>
+</body>
+</html>
